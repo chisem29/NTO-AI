@@ -1,7 +1,5 @@
-import warnings
-warnings.filterwarnings('ignore')
 
-%matplotlib inline
+print('Importing is starting')
 import os
 import time
 import argparse
@@ -13,12 +11,13 @@ import pandas as pd
 import lightgbm as lgb
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.feature_extraction.text import TfidfVectorizer
+from tqdm import tqdm
 
 import joblib
-from tqdm import tqdm
 
 import torch
 from transformers import AutoModel, AutoTokenizer
+print('Importing is ending')
 
 # =================================================================================
 # CONSTANTS
@@ -87,7 +86,7 @@ RANDOM_STATE = 42
 TARGET = COL_TARGET
 TEMPORAL_SPLIT_RATIO = 0.8
 EARLY_STOPPING_ROUNDS = 50
-MODEL_FILENAME = "lgb_model.txt"
+MODEL_FILENAME = "LGBGEN2.txt"
 
 TFIDF_MAX_FEATURES = 700 # 500
 TFIDF_MIN_DF = 2
@@ -95,7 +94,7 @@ TFIDF_MAX_DF = 0.95
 TFIDF_NGRAM_RANGE = (1, 2)
 
 BERT_BATCH_SIZE = 8
-BERT_MAX_LENGTH = 384 #128
+BERT_MAX_LENGTH = 384 # 128
 BERT_EMBEDDING_DIM = 768
 BERT_DEVICE = "cuda" if torch and torch.cuda.is_available() else "cpu"
 BERT_GPU_MEMORY_FRACTION = 0.8
@@ -265,6 +264,7 @@ def add_bert_features(
 def handle_missing_values(df: pd.DataFrame, train_df: pd.DataFrame) -> pd.DataFrame:
     print("Handling missing values...")
     global_mean = train_df[TARGET].mean()
+    df[COL_AGE] = df[COL_AGE].astype('float32')
     df[COL_AGE] = df[COL_AGE].fillna(df[COL_AGE].median())
 
     for col in [F_USER_MEAN_RATING, F_BOOK_MEAN_RATING, F_AUTHOR_MEAN_RATING]:
@@ -281,11 +281,23 @@ def handle_missing_values(df: pd.DataFrame, train_df: pd.DataFrame) -> pd.DataFr
             df[col] = df[col].fillna(0.0)
 
     for col in CAT_FEATURES:
+        
         if col in df.columns and df[col].isna().any():
             if df[col].dtype.name in ("category", "object"):
                 df[col] = df[col].astype(str).fillna(MISSING_CAT_VALUE).astype("category")
             else:
-                df[col] = df[col].fillna(MISSING_NUM_VALUE)
+                df[col] = df[col].fillna(MISSING_NUM_VALUE) 
+
+    dtype_spec = {
+        COL_USER_ID: "int32", COL_BOOK_ID: "int32", COL_TARGET: "float32",
+        COL_GENDER: "category", COL_AGE: "float32", COL_AUTHOR_ID: "int32",
+        COL_PUBLICATION_YEAR: "float32", COL_LANGUAGE: "category",
+        COL_PUBLISHER: "category", COL_AVG_RATING: "float32", COL_GENRE_ID: "int16",
+    } 
+
+    for d in dtype_spec :
+        if d in df.columns :
+            df[d] = df[d].astype(dtype_spec[d])
 
     return df
 
@@ -428,6 +440,7 @@ def predict(model_name=MODEL_FILENAME, data_filename=PROCESSED_DATA_FILENAME, sa
     exclude = [COL_SOURCE, TARGET, COL_PREDICTION, COL_TIMESTAMP]
     features = [c for c in test_df.columns if c not in exclude and test_df[c].dtype != "object"]
     X_test = test_df[features]
+    print(X_test.select_dtypes(include=['category']).columns)
 
     model_path = MODEL_DIR / model_name
     if not model_path.exists():
@@ -452,7 +465,7 @@ def predict(model_name=MODEL_FILENAME, data_filename=PROCESSED_DATA_FILENAME, sa
 def ensemble_results(model_names, data_filename=PROCESSED_DATA_FILENAME, save=True) :
 
   print("="*60)
-  print("GENERATING PREDICTIONS")
+  print("GENERATING ENSEMBLE")
   print("="*60)
 
   preds = [predict(model_name, data_filename=data_filename, save=False) for model_name in model_names]
@@ -483,4 +496,5 @@ LGB_PARAMS = {
     "seed": RANDOM_STATE,
     "boosting_type": "gbdt",
 }
+
 predict('LBMGEN2.txt')
