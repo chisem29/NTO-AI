@@ -27,17 +27,13 @@ NTO-AI/
 │   ├── users.csv
 │   └── processed/                      # Обработанные данные
 │       ├── processed_features.parquet ✅
-│       └── processed_featuresV2.parquet 
 ├── output/                             # Результаты экспериментов
 │   └── models/
-│       ├── bert_embeddings.pkl
-│       ├── bert_embeddingsV2.pkl ✅
-│       ├── LBMGEN.txt
-│       ├── LBMGEN2.txt ✅
-│       ├── ...
-│       ├── MYLBM.txt
+│       ├── bert_embeddings.pkl ✅
+│       ├── LBMGEN2.txt
+│       ├── LGB_1TEMPV1.txt ✅
+│       ├── LGB_09TEMPV1.txt ✅
 │       ├── tfidf_vectorizer.pkl ✅
-│       └── tfidf_vectorizerV2.pkl
 ├── submissions                  # Файлы для отправки
 ├── Dockerfile                   # Сборщик образа проекта
 ├── requirements.txt             # Зависимости Python
