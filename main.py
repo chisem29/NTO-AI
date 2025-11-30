@@ -371,7 +371,10 @@ def prepare_data(
 
 def train(
     model_name=MODEL_FILENAME,
-    data_filename=PROCESSED_DATA_FILENAME):
+    data_filename=PROCESSED_DATA_FILENAME,
+    train_size=TEMPORAL_SPLIT_RATIO,
+    eval=True,
+    gpu=False):
     print("="*60)
     print("STARTING TRAINING")
     print("="*60)
@@ -382,7 +385,7 @@ def train(
     df = pd.read_parquet(path)
 
     train_df = df[df[COL_SOURCE] == VAL_SOURCE_TRAIN].copy()
-    split_date = get_split_date_from_ratio(train_df, TEMPORAL_SPLIT_RATIO, COL_TIMESTAMP)
+    split_date = get_split_date_from_ratio(train_df, train_size, COL_TIMESTAMP)
     print(f"Temporal split date: {split_date}")
 
     train_mask, val_mask = temporal_split_by_date(train_df, split_date)
@@ -399,20 +402,39 @@ def train(
     X_train, y_train = train_split[features], train_split[TARGET]
     X_val, y_val = val_split[features], val_split[TARGET]
 
-    print(f"Training on {len(X_train)} samples with params={LGB_PARAMS}, validating on {len(X_val)}, {len(features)} features")
+    if eval :
+      print(f"Training on {len(X_train)} samples with params={LGB_PARAMS}, validating on {len(X_val)}, {len(features)} features")
+      if gpu :
+        LGB_PARAMS.update({'device' : 'gpu'})
+      MODEL_DIR.mkdir(parents=True, exist_ok=True)
+      model = lgb.LGBMRegressor(**LGB_PARAMS)
+      model.fit(
+          X_train, y_train,
+          eval_set=[(X_val, y_val)],
+          callbacks=[lgb.early_stopping(EARLY_STOPPING_ROUNDS, verbose=False)]
+      )
 
-    MODEL_DIR.mkdir(parents=True, exist_ok=True)
-    model = lgb.LGBMRegressor(**LGB_PARAMS)
-    model.fit(
-        X_train, y_train,
-        eval_set=[(X_val, y_val)],
-        callbacks=[lgb.early_stopping(EARLY_STOPPING_ROUNDS, verbose=False)]
-    )
+      preds = model.predict(X_val)
+      rmse = np.sqrt(mean_squared_error(y_val, preds))
+      mae = mean_absolute_error(y_val, preds)
+      print(f"Validation RMSE: {rmse:.4f}, MAE: {mae:.4f}")
+    else :
+      X_A = pd.concat([X_train, X_val], axis=0)
+      Y_A = pd.concat([train_split[[TARGET]], val_split[[TARGET]]], axis=0)[TARGET]
+      print(f"Training on {len(X_A)} samples with params={LGB_PARAMS}, validating on {len(X_A)}, {len(features)} features")
 
-    preds = model.predict(X_val)
-    rmse = np.sqrt(mean_squared_error(y_val, preds))
-    mae = mean_absolute_error(y_val, preds)
-    print(f"Validation RMSE: {rmse:.4f}, MAE: {mae:.4f}")
+      MODEL_DIR.mkdir(parents=True, exist_ok=True)
+      model = lgb.LGBMRegressor(**LGB_PARAMS)
+      model.fit(
+          X_A, Y_A,
+          eval_set=[(X_A, Y_A)],
+          callbacks=[lgb.early_stopping(EARLY_STOPPING_ROUNDS, verbose=False)]
+      )
+
+      preds = model.predict(X_A)
+      rmse = np.sqrt(mean_squared_error(Y_A, preds))
+      mae = mean_absolute_error(Y_A, preds)
+      print(f"RMSE: {rmse:.4f}, MAE: {mae:.4f}")
 
     model.booster_.save_model(MODEL_DIR / model_name)
     print(f"Model saved to {MODEL_DIR / model_name}")
@@ -440,7 +462,6 @@ def predict(model_name=MODEL_FILENAME, data_filename=PROCESSED_DATA_FILENAME, sa
     exclude = [COL_SOURCE, TARGET, COL_PREDICTION, COL_TIMESTAMP]
     features = [c for c in test_df.columns if c not in exclude and test_df[c].dtype != "object"]
     X_test = test_df[features]
-    print(X_test.select_dtypes(include=['category']).columns)
 
     model_path = MODEL_DIR / model_name
     if not model_path.exists():
@@ -480,7 +501,7 @@ def ensemble_results(model_names, data_filename=PROCESSED_DATA_FILENAME, save=Tr
 
   return sub
 
-LGB_PARAMS = {
+"""LGB_PARAMS = {
     "objective": "rmse",
     "metric": "rmse",
     "n_estimators": 1000,
@@ -496,5 +517,5 @@ LGB_PARAMS = {
     "seed": RANDOM_STATE,
     "boosting_type": "gbdt",
 }
-
-predict('LBMGEN2.txt')
+"""
+ensemble_results(['LGB_1TEMPV1.txt', 'LGB_09TEMPV1.txt'])
